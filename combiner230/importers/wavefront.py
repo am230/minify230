@@ -16,11 +16,12 @@ from ..model import (Color,
 
 class Wavefront:
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, fast_export: bool = False):
         self.base = path.parent
         self.obj = path
         self.material = self.base / Path('material.mtl')
         self.model = Model()
+        self.fast_export = fast_export
 
     def get(self, path: str) -> Path:
         return self.base / Path(*path)
@@ -83,7 +84,10 @@ class Wavefront:
         for texture in model.textures:
             texture.image.save(self.base / texture.name)
         self.export_material(model)
-        self.export_model(self.obj, self.material, model)
+        if self.fast_export:
+            self.export_model_fast(self.obj, self.material, model)
+        else:
+            self.export_model(self.obj, self.material, model)
 
     def export_material(self, model: Model):
         lines = []
@@ -94,20 +98,13 @@ class Wavefront:
             lines.append(f'map_Kd {material.texture.name}')
         self.material.write_text('\n'.join(lines), encoding='utf-8')
 
-    def export_model(self, obj: Path, material: Path, model: Model):
+    def export_model_fast(self, obj: Path, material: Path, model: Model):
         lines = [f'mtllib {material.relative_to(self.base)}', f'o {obj.name}']
-
         index = 1
         for mesh in model.meshes:
             lines.append(f"usemtl {mesh.material.name}")
             for face in mesh.faces:
                 for vertex in face.vertexes:
-                    # positions.add(vertex.position)
-                    # vertex.texcoord = (vertex.texcoord[0] / mesh.material.texture.image.width,
-                    #                    vertex.texcoord[1] / mesh.material.texture.image.height)
-                    # texcoords.add(vertex.texcoord)
-                    # normals.add(vertex.normal)
-
                     lines.append(f'v {vertex.position[0]} {vertex.position[1]} {vertex.position[2]} {vertex.position[3]}')
                     lines.append(f'vt {vertex.texcoord[0] / mesh.material.texture.image.width} {vertex.texcoord[1] / mesh.material.texture.image.height}')
                     lines.append(f'vn {vertex.normal[0]} {vertex.normal[1]} {vertex.normal[2]}')
@@ -115,6 +112,43 @@ class Wavefront:
                 for _ in face.vertexes:
                     lines[-1] += (f' {index}/{index}/{index}')
                     index += 1
+        obj.write_text('\n'.join(lines), encoding='utf-8')
+
+    def export_model(self, obj: Path, material: Path, model: Model):
+        lines = [f'mtllib {material.relative_to(self.base)}', f'o {obj.name}']
+
+        positions, texcoords, normals = set(), set(), set()
+
+        for mesh in model.meshes:
+            for face in mesh.faces:
+                for vertex in face.vertexes:
+                    positions.add(vertex.position)
+                    vertex.texcoord = (vertex.texcoord[0] / mesh.material.texture.image.width, vertex.texcoord[1] / mesh.material.texture.image.height)
+                    texcoords.add(vertex.texcoord)
+                    normals.add(vertex.normal)
+
+        positions, texcoords, normals = list(positions), list(texcoords), list(normals)
+
+        v_lines = [f'v {pos[0]} {pos[1]} {pos[2]}' for pos in positions]
+        vt_lines = [f'vt {tex[0]} {tex[1]}' for tex in texcoords]
+        vn_lines = [f'vn {norm[0]} {norm[1]} {norm[2]}' for norm in normals]
+        f_lines = []
+
+        material = None
+        for mesh in model.meshes:
+            if mesh.material != material:
+                f_lines.append(f'usemtl {mesh.material.name}')
+            material = mesh.material
+            for face in mesh.faces:
+                vertexes = []
+                for vertex in face.vertexes:
+                    vertexes.append(f'{positions.index(vertex.position) + 1}/{texcoords.index(vertex.texcoord) + 1}/{normals.index(vertex.normal) + 1}')
+                f_lines.append(f'f {" ".join(vertexes)}')
+
+        lines.extend(v_lines)
+        lines.extend(vt_lines)
+        lines.extend(vn_lines)
+        lines.extend(f_lines)
         obj.write_text('\n'.join(lines), encoding='utf-8')
 
     def load_material(self, path: Path) -> None:

@@ -1,38 +1,9 @@
-from minify230.importers.wavefront import Wavefront
-from minify230.model import Model
-from minify230 import Minifier
-from concurrent.futures import ProcessPoolExecutor
+from combiner230.importers.wavefront import Wavefront
+from combiner230 import Minifier
 from pathlib import Path
+model_in = Wavefront(Path('533926434\\533926434_bldg_6677.obj'))
+# model_in = Wavefront(Path('D:\\projects\\倉庫\\avaters\\tona\\tona.obj'))
+model_in.parse()
 
-path = Path('LOD2')
-temp = Path('temp')
-
-def pre_process(obj: Path):
-    a = Wavefront(obj)
-    a.parse()
-    dest = Wavefront(temp / obj.stem / 'combined.obj')
-    if dest.base.exists():
-        print('[*]', obj.name)
-        return
-    dest.base.mkdir(parents=True, exist_ok=True)
-    dest.export(Minifier(a.model).minify())
-    print('[+]', obj.name)
-
-if __name__ == '__main__':
-    combined = Model()
-
-    for obj in path.glob('*/*.obj'):
-        a = Wavefront(obj)
-        a.model = combined
-        a.parse()
-        print('[+]', obj.name)
-
-
-    Wavefront(Path('export10', 'combined.obj')).export(Minifier(combined).minify())
-
-# a = Wavefront(Path('LOD2\\533926434\\533926434_bldg_6677.obj'))
-# a = Wavefront(Path('cubes', 'untitled.obj'))
-# a.parse()
-
-# b = Wavefront(Path('test', 'export', 'untitled.obj'))
-# b.export(Minifier(a.model).minify())
+model_out = Wavefront(Path('export\\combined.obj'))
+model_out.export(Minifier(model_in.model).minify())
