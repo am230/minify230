@@ -2,16 +2,10 @@ from pathlib import Path
 from typing import List
 
 from PIL import Image
+from ..profiler import profiler
 
-from ..model import (Color,
-                     Face,
-                     Material,
-                     Mesh,
-                     Model,
-                     Position,
-                     Texcoord,
-                     Texture,
-                     Vertex)
+from ..model import (Color, Face, Material, Mesh, Model, Position, Texcoord,
+                     Texture, Vertex)
 
 
 class Wavefront:
@@ -24,15 +18,16 @@ class Wavefront:
         self.fast_export = fast_export
 
     def get(self, path: str) -> Path:
-        return self.base / Path(*path)
+        return self.base / path
 
+    @profiler
     def parse(self) -> Model:
         mesh = None
         lines = self.obj.read_text(encoding='utf-8').splitlines()
-        positions: List = []
-        texcoords: List = []
-        normals: List = []
-        meshes = []
+        positions: List[tuple] = []
+        texcoords: List[tuple] = []
+        normals: List[tuple] = []
+        meshes: List[Mesh] = []
 
         for line in lines:
             line = line.strip()
@@ -41,7 +36,7 @@ class Wavefront:
             args = line.split(' ')
             match args:
                 case ['mtllib', *path]:
-                    self.load_material(self.get(path))
+                    self.load_material(self.get(line[line.index(' ') + 1:]))
                 case ['o', name]:
                     # mesh_group = VertexGroup()
                     pass
@@ -72,6 +67,8 @@ class Wavefront:
                         mesh.faces.append(Face(vertexes))
         # uv to pixel
         for mesh in meshes:
+            if mesh.material.texture is None:
+                continue
             for face in mesh.faces:
                 for vertex in face.vertexes:
                     vertex.texcoord = (vertex.texcoord[0] * mesh.material.texture.image.width,
@@ -79,6 +76,7 @@ class Wavefront:
         self.model.meshes.extend(meshes)
         return self.model
 
+    @profiler
     def export(self, model: Model) -> None:
         self.base.mkdir(parents=True, exist_ok=True)
         for texture in model.textures:
@@ -98,6 +96,7 @@ class Wavefront:
             lines.append(f'map_Kd {material.texture.name}')
         self.material.write_text('\n'.join(lines), encoding='utf-8')
 
+    @profiler
     def export_model_fast(self, obj: Path, material: Path, model: Model):
         lines = [f'mtllib {material.relative_to(self.base)}', f'o {obj.name}']
         index = 1
@@ -114,35 +113,39 @@ class Wavefront:
                     index += 1
         obj.write_text('\n'.join(lines), encoding='utf-8')
 
+    @profiler
     def export_model(self, obj: Path, material: Path, model: Model):
         lines = [f'mtllib {material.relative_to(self.base)}', f'o {obj.name}']
 
-        positions, texcoords, normals = set(), set(), set()
+        positions, texcoords, normals = [], [], []
 
         for mesh in model.meshes:
             for face in mesh.faces:
                 for vertex in face.vertexes:
-                    positions.add(vertex.position)
-                    vertex.texcoord = (vertex.texcoord[0] / mesh.material.texture.image.width, vertex.texcoord[1] / mesh.material.texture.image.height)
-                    texcoords.add(vertex.texcoord)
-                    normals.add(vertex.normal)
+                    positions.append(vertex.position)
+                    if mesh.material.texture is not None:
+                        vertex.texcoord = (vertex.texcoord[0] / mesh.material.texture.image.width, vertex.texcoord[1] / mesh.material.texture.image.height)
+                    texcoords.append(vertex.texcoord)
+                    normals.append(vertex.normal)
 
-        positions, texcoords, normals = list(positions), list(texcoords), list(normals)
+        position_dict = {pos: i for i, pos in enumerate(positions)}
+        texcoord_dict = {tex: i for i, tex in enumerate(texcoords)}
+        normal_dict = {norm: i for i, norm in enumerate(normals)}
 
-        v_lines = [f'v {pos[0]} {pos[1]} {pos[2]}' for pos in positions]
-        vt_lines = [f'vt {tex[0]} {tex[1]}' for tex in texcoords]
-        vn_lines = [f'vn {norm[0]} {norm[1]} {norm[2]}' for norm in normals]
+        v_lines = [f'v {pos[0]} {pos[1]} {pos[2]}' for pos in position_dict]
+        vt_lines = [f'vt {tex[0]} {tex[1]}' for tex in texcoord_dict]
+        vn_lines = [f'vn {norm[0]} {norm[1]} {norm[2]}' for norm in normal_dict]
         f_lines = []
 
         material = None
         for mesh in model.meshes:
             if mesh.material != material:
                 f_lines.append(f'usemtl {mesh.material.name}')
-            material = mesh.material
+                material = mesh.material
             for face in mesh.faces:
                 vertexes = []
                 for vertex in face.vertexes:
-                    vertexes.append(f'{positions.index(vertex.position) + 1}/{texcoords.index(vertex.texcoord) + 1}/{normals.index(vertex.normal) + 1}')
+                    vertexes.append(f'{position_dict[vertex.position]}/{texcoord_dict[vertex.texcoord]}/{normal_dict[vertex.normal]}')
                 f_lines.append(f'f {" ".join(vertexes)}')
 
         lines.extend(v_lines)
@@ -151,6 +154,7 @@ class Wavefront:
         lines.extend(f_lines)
         obj.write_text('\n'.join(lines), encoding='utf-8')
 
+    @profiler
     def load_material(self, path: Path) -> None:
         lines = path.read_text(encoding='utf-8').splitlines()
         for line in lines:
@@ -166,7 +170,7 @@ class Wavefront:
                 case ['Ka', *color]:
                     material.ambient = Color(*color)
                 case ['map_Kd', *path]:
-                    material.texture = self.load_texture(self.get(path))
+                    material.texture = self.load_texture(self.get(line[line.index(' ') + 1:]))
 
     def load_texture(self, path: Path) -> Texture:
         texture = Texture(path.name, Image.open(path))

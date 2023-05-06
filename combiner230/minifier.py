@@ -1,8 +1,11 @@
-import rpack
-from .model import Model, Texcoord, Texture, Material, Color
-from typing import Dict
-from PIL import Image
 import math
+from typing import Dict
+
+import rpack
+from PIL import Image
+
+from .model import Color, Material, Model, Texcoord, Texture
+from .profiler import profiler
 
 
 class Box2:
@@ -33,9 +36,12 @@ class Minifier:
     def __init__(self, model: Model):
         self.model = model
 
+    @profiler
     def minify(self) -> Model:
         texture_bounds: Dict[str, Box2] = {}
         for mesh in self.model.meshes:
+            if mesh.material.texture is None:
+                continue
             texture_name = mesh.material.texture.name
             if texture_name not in texture_bounds:
                 box = Box2(mesh.faces[0].vertexes[0].texcoord, mesh.faces[0].vertexes[0].texcoord)
@@ -64,6 +70,8 @@ class Minifier:
             cropped = texture.image.crop((bound.min[0], bound.min[1], bound.max[0], bound.max[1]))
             combined_texture.image.paste(cropped, offset)
         for mesh in self.model.meshes:
+            if mesh.material.texture is None:
+                continue
             texture_name = mesh.material.texture.name
             bound = texture_bounds[texture_name]
             tex_offset = bound.min
@@ -72,7 +80,7 @@ class Minifier:
             for face in mesh.faces:
                 for vertex in face.vertexes:
                     vertex.texcoord = (vertex.texcoord[0] - tex_offset[0] + tex_offset_x,
-                                    vertex.texcoord[1] - tex_offset[1] + tex_offset_y)
+                                       vertex.texcoord[1] - tex_offset[1] + tex_offset_y)
             mesh.material = combined_material
         self.model.textures = [combined_texture]
         self.model.materials = {combined_material.name: combined_material}
