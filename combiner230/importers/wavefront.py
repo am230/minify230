@@ -128,9 +128,9 @@ class Wavefront:
                     texcoords.append(vertex.texcoord)
                     normals.append(vertex.normal)
 
-        position_dict = {pos: i for i, pos in enumerate(positions)}
-        texcoord_dict = {tex: i for i, tex in enumerate(texcoords)}
-        normal_dict = {norm: i for i, norm in enumerate(normals)}
+        position_dict = {pos: i + 1 for i, pos in enumerate(set(positions))}
+        texcoord_dict = {tex: i + 1 for i, tex in enumerate(set(texcoords))}
+        normal_dict = {norm: i + 1 for i, norm in enumerate(set(normals))}
 
         v_lines = [f'v {pos[0]} {pos[1]} {pos[2]}' for pos in position_dict]
         vt_lines = [f'vt {tex[0]} {tex[1]}' for tex in texcoord_dict]
